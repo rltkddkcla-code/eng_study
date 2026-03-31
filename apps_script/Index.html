@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        background: #f5f7fb;
+        color: #1f2937;
+      }
+      .container {
+        max-width: 640px;
+        margin: 0 auto;
+        padding: 16px;
+      }
+      .card {
+        background: #fff;
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+        margin-bottom: 12px;
+      }
+      .prompt {
+        font-size: 1.1rem;
+        margin-bottom: 8px;
+      }
+      textarea,
+      input,
+      select,
+      button {
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 8px;
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid #d1d5db;
+      }
+      button {
+        background: #2563eb;
+        color: white;
+        border: none;
+        font-weight: 700;
+      }
+      button.secondary {
+        background: #4b5563;
+      }
+      .hidden {
+        display: none;
+      }
+      .tag-list label {
+        display: inline-block;
+        margin-right: 8px;
+      }
+      .muted {
+        color: #6b7280;
+        font-size: 0.9rem;
+      }
+      ul { margin-top: 8px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <h2>영어회화 패턴 트레이너</h2>
+        <p class="muted">한국어 보고 영어로 말하거나 적어보세요. 정답 확인 후 스스로 평가해 누적 분석합니다.</p>
+      </div>
+
+      <div class="card">
+        <div id="koPrompt" class="prompt">문제를 불러오는 중...</div>
+        <textarea id="userAnswer" rows="3" placeholder="영어 답안을 적어보세요"></textarea>
+        <button id="showBtn">정답 보기</button>
+      </div>
+
+      <div id="answerCard" class="card hidden">
+        <div><strong>정답:</strong> <span id="enAnswer"></span></div>
+        <div class="muted" style="margin-top:8px;">패턴: <span id="pattern"></span></div>
+        <div>
+          <strong>응용 표현</strong>
+          <ul id="variations"></ul>
+        </div>
+
+        <label>자가평가 점수(1~5)</label>
+        <select id="selfScore">
+          <option value="5">5 - 거의 완벽</option>
+          <option value="4">4 - 작은 실수</option>
+          <option value="3" selected>3 - 보통</option>
+          <option value="2">2 - 실수 많음</option>
+          <option value="1">1 - 거의 못함</option>
+        </select>
+
+        <div class="tag-list">
+          <p><strong>실수 유형</strong></p>
+          <label><input type="checkbox" value="word_order" /> 어순</label>
+          <label><input type="checkbox" value="article" /> 관사(a/the)</label>
+          <label><input type="checkbox" value="tense" /> 시제</label>
+          <label><input type="checkbox" value="preposition" /> 전치사</label>
+          <label><input type="checkbox" value="light_verb_collocation" /> light-verb 결합</label>
+        </div>
+
+        <input id="notes" placeholder="메모 (선택)" />
+        <button id="saveNextBtn">저장하고 다음</button>
+      </div>
+
+      <div class="card">
+        <h3>자주 하는 실수</h3>
+        <ul id="mistakeBoard"></ul>
+      </div>
+    </div>
+
+    <script>
+      let currentPattern = null;
+
+      function loadPattern() {
+        google.script.run.withSuccessHandler((p) => {
+          currentPattern = p;
+          document.getElementById('koPrompt').textContent = '🇰🇷 ' + p.koPrompt;
+          document.getElementById('userAnswer').value = '';
+          document.getElementById('answerCard').classList.add('hidden');
+        }).getRandomPattern();
+      }
+
+      function renderMistakes() {
+        google.script.run.withSuccessHandler((items) => {
+          const ul = document.getElementById('mistakeBoard');
+          ul.innerHTML = '';
+          if (!items.length) {
+            ul.innerHTML = '<li>아직 데이터가 없습니다.</li>';
+            return;
+          }
+          items.slice(0, 10).forEach((m) => {
+            const li = document.createElement('li');
+            li.textContent = `${m.tag}: ${m.count}회`;
+            ul.appendChild(li);
+          });
+        }).getMistakeDashboard();
+      }
+
+      document.getElementById('showBtn').addEventListener('click', () => {
+        if (!currentPattern) return;
+        document.getElementById('enAnswer').textContent = currentPattern.enAnswer;
+        document.getElementById('pattern').textContent = currentPattern.pattern;
+        const ul = document.getElementById('variations');
+        ul.innerHTML = '';
+        (currentPattern.variations || []).forEach((v) => {
+          const li = document.createElement('li');
+          li.textContent = v;
+          ul.appendChild(li);
+        });
+        document.getElementById('answerCard').classList.remove('hidden');
+      });
+
+      document.getElementById('saveNextBtn').addEventListener('click', () => {
+        if (!currentPattern) return;
+        const mistakeTags = Array.from(document.querySelectorAll('.tag-list input:checked')).map((x) => x.value);
+        const payload = {
+          patternId: currentPattern.id,
+          koPrompt: currentPattern.koPrompt,
+          expected: currentPattern.enAnswer,
+          userAnswer: document.getElementById('userAnswer').value,
+          selfScore: Number(document.getElementById('selfScore').value),
+          mistakeTags,
+          slotErrors: [],
+          notes: document.getElementById('notes').value
+        };
+
+        google.script.run.withSuccessHandler(() => {
+          document.querySelectorAll('.tag-list input:checked').forEach((x) => (x.checked = false));
+          document.getElementById('notes').value = '';
+          renderMistakes();
+          loadPattern();
+        }).submitAttempt(payload);
+      });
+
+      google.script.run.withSuccessHandler(() => {
+        loadPattern();
+        renderMistakes();
+      }).setupSheets();
+    </script>
+  </body>
+</html>
